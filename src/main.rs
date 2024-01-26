@@ -127,7 +127,7 @@ impl<F:PrimeField> Circuit<F> for ExpCircuit<F> {
             running_result[0] = F::ONE;
             for i in 1..=256 {
                 if exponent_bits[i-1]==F::ONE {
-                    running_result[i] = running_result[i-1] * running_base_powers[i]
+                    running_result[i] = running_result[i-1] * running_base_powers[i-1]
                 } else {
                     running_result[i] = running_result[i-1];
                 }
@@ -189,8 +189,8 @@ impl<F:PrimeField> Circuit<F> for ExpCircuit<F> {
 }
 
 fn main() {
-    type F = halo2_proofs::halo2curves::bn256::Fr; // Native Field
-    let (base, exponent) = (F::from(5), F::from(6));
+    type F = halo2_proofs::halo2curves::bn256::Fr;
+    let (base, exponent) = (F::from(5), F::from(1));
     let result = base.pow(exponent.to_le_bits().data);
 
     println!("base: {base:?}, exponent: {exponent:?}, result: {result:?}, MODULUS: {}", F::MODULUS);
