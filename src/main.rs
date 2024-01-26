@@ -7,6 +7,18 @@ use halo2_proofs::plonk::{Column, Advice, Selector, ConstraintSystem,Circuit, Er
 use halo2_proofs::circuit::{Layouter,SimpleFloorPlanner,Value};
 use halo2_proofs::poly::Rotation;
 
+// Circuit for Exponentiation, taking in (base, exponent, result) field elements
+// overflows and similar errors are not accounted for and ignored by modulo operation
+// Author: Mario A. Barbara <mariobarbara@protonmail.ch>
+// |             | running_result                         | running_base_powers                            | exponent_bits | running_exponent                         |
+// |-------------|----------------------------------------|------------------------------------------------|---------------|------------------------------------------|
+// | ROW=0       | 1 (first step of recursion)            | input base (first step of recursion)           |               | output exponent (last step of recursion) |
+// |             |                                        |                                                |               |                                          |
+// | ROWS=1..256 | ..recursion..                          | ..x^(2^i)..                                    | ..e_i..       | ..recursion..                            |
+// | ROW=256     | output result (last step of recursion) |                                                |               | 0 (first step of recursion)              |
+// |             |                                        |                                                |               |                                          |
+// | ROW=257     | input result                           | x^(2^256) (last step of recursion, not needed) |               | input exponent                           |
+
 #[derive(Clone, Debug)]
 pub struct ExpCircuitConfig {
     q_running: Selector, // active on rows 1..256
@@ -195,7 +207,46 @@ fn main() {
 
     println!("base: {base:?}, exponent: {exponent:?}, result: {result:?}, MODULUS: {}", F::MODULUS);
     let circuit = ExpCircuit::<F>{base, exponent, result};
-    let prover = halo2_proofs::dev::MockProver::<F>::run(10, &circuit, vec![]).unwrap();
+    let prover = halo2_proofs::dev::MockProver::<F>::run(9, &circuit, vec![]).unwrap();
     prover.assert_satisfied();
     println!("CIRCUIT TEST COMPLETED")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    type F = halo2_proofs::halo2curves::bn256::Fr;
+    fn test_ok(base:F, exponent: F) {
+        let result = base.pow(exponent.to_le_bits().data);
+        let circuit = ExpCircuit::<F>{base, exponent, result};
+        let prover = halo2_proofs::dev::MockProver::<F>::run(9, &circuit, vec![]).unwrap();
+        prover.assert_satisfied();
+    }
+
+    #[test]
+    fn exp_zero() {
+        test_ok(F::ZERO, F::ZERO);
+        test_ok(F::ONE, F::ZERO);
+        test_ok(F::from(0xcafeu64), F::ZERO);
+        test_ok(F::from(0xfffffffffffffff), F::ZERO);
+    }
+
+    #[test]
+    fn exp_one() {
+        test_ok(F::ZERO, F::ONE);
+        test_ok(F::ONE, F::ONE);
+        test_ok(F::from(0xcafeu64), F::ONE);
+        test_ok(F::from(0xfffffffffffffff), F::ONE);
+    }
+
+    #[test]
+    fn exp_simple() {
+        test_ok(F::from(5), F::from(6));
+        test_ok(F::from(2), F::from(5));
+        test_ok(F::from(3), F::from(101));
+        test_ok(F::from(5), F::from(256));
+        test_ok(F::from(7), F::from(1023));
+        test_ok(F::from(0xfffffffffffffff), F::from(2));
+        test_ok(F::from(0xfffffffffffffff), F::from(3));
+    }
 }
